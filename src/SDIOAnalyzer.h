@@ -50,7 +50,8 @@ class ANALYZER_EXPORT SDIOAnalyzer : public Analyzer2
         FRAME_CMD,
         FRAME_ARG,
         FRAME_LONG_ARG,
-        FRAME_CRC
+        FRAME_CRC,
+        FRAME_DATA
     };
 
   protected: // vars
@@ -95,12 +96,28 @@ class ANALYZER_EXPORT SDIOAnalyzer : public Analyzer2
 
     bool isCmd;
 
+    // Data phase decoding (DAT0..DAT3)
+    bool dataActive = false;
+    bool dataUsing4Bit = false;
+    U32 expectedDataBytes = 0;       // set after CMD53 (best-effort)
+    U32 remainingDataBytes = 0;      // countdown during a data phase
+    U32 trailerBitsRemaining = 0;    // CRC16 (16 clocks) + end bit
+    U32 dataIdleHighClocks = 0;      // heuristic termination when expected length is unknown
+    U32 dataBytesDecodedInPhase = 0;
+    U8 dataByteAcc = 0;
+    U8 dataNibbleCount = 0;          // 0 or 1 for 4-bit mode
+    U64 dataByteStartSample = 0;
+    BitState prevCmd = BIT_HIGH;
+    BitState prevDat0 = BIT_HIGH;
+    bool cmdActive = false;
+
     U8 byte = 0;
     U8 data[ 8 ] = { 0 };
     int byteCounter = 0;
     U64 qwordHigh = 0;
     U64 qwordLow = 0;
     U32 lastCommand;
+    U32 lastArg32 = 0;
     U32 expectedCRC;
     S64 startingSampleInclusive = 0;
     S64 endingSampleInclusive = 0;

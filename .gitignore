@@ -22,3 +22,6 @@
 
 release/
 debug/
+build/
+
+.DS_Store

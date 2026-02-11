@@ -66,10 +66,8 @@ void SDIOAnalyzer::SetupResults()
 
     // mResults->AddChannelBubblesWillAppearOn(mSettings->mClockChannel);
     mResults->AddChannelBubblesWillAppearOn( mSettings->mCmdChannel );
-    // mResults->AddChannelBubblesWillAppearOn(mSettings->mDAT0Channel);
-    // mResults->AddChannelBubblesWillAppearOn(mSettings->mDAT1Channel);
-    // mResults->AddChannelBubblesWillAppearOn(mSettings->mDAT2Channel);
-    // mResults->AddChannelBubblesWillAppearOn(mSettings->mDAT3Channel);
+    if( mSettings->mDAT0Channel != UNDEFINED_CHANNEL )
+        mResults->AddChannelBubblesWillAppearOn( mSettings->mDAT0Channel );
 }
 
 void SDIOAnalyzer::WorkerThread()
@@ -83,23 +81,235 @@ void SDIOAnalyzer::WorkerThread()
     mDAT2 = mSettings->mDAT2Channel == UNDEFINED_CHANNEL ? nullptr : GetAnalyzerChannelData( mSettings->mDAT2Channel );
     mDAT3 = mSettings->mDAT3Channel == UNDEFINED_CHANNEL ? nullptr : GetAnalyzerChannelData( mSettings->mDAT3Channel );
 
+    // Drive decoding from the clock so we can analyze both CMD and DAT phases.
     mClock->AdvanceToNextEdge();
-    mCmd->AdvanceToAbsPosition( mClock->GetSampleNumber() );
-    if( mDAT0 )
-        mDAT0->AdvanceToAbsPosition( mClock->GetSampleNumber() );
-    if( mDAT1 )
-        mDAT1->AdvanceToAbsPosition( mClock->GetSampleNumber() );
-    if( mDAT2 )
-        mDAT2->AdvanceToAbsPosition( mClock->GetSampleNumber() );
-    if( mDAT3 )
-        mDAT3->AdvanceToAbsPosition( mClock->GetSampleNumber() );
+    {
+        const U64 sampleNumber = mClock->GetSampleNumber();
+        lastFallingClockEdge = sampleNumber;
+        mCmd->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT0 )
+            mDAT0->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT1 )
+            mDAT1->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT2 )
+            mDAT2->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT3 )
+            mDAT3->AdvanceToAbsPosition( sampleNumber );
+        prevCmd = mCmd->GetBitState();
+        if( mDAT0 )
+            prevDat0 = mDAT0->GetBitState();
+    }
 
     for( ;; )
     {
-        PacketStateMachine();
+        mClock->AdvanceToNextEdge();
+        const U64 sampleNumber = mClock->GetSampleNumber();
+
+        mCmd->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT0 )
+            mDAT0->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT1 )
+            mDAT1->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT2 )
+            mDAT2->AdvanceToAbsPosition( sampleNumber );
+        if( mDAT3 )
+            mDAT3->AdvanceToAbsPosition( sampleNumber );
+
+        if( mClock->GetBitState() == BIT_HIGH )
+        {
+            // Rising clock edge: sample CMD and DAT.
+            mResults->AddMarker( sampleNumber, AnalyzerResults::UpArrow, mSettings->mClockChannel );
+
+            // --- CMD start detection (start bit is 0, idle is 1) ---
+            const BitState cmd_now = mCmd->GetBitState();
+            if( !cmdActive )
+            {
+                if( prevCmd == BIT_HIGH && cmd_now == BIT_LOW )
+                {
+                    // Detected start bit; actual packet fields begin next clock.
+                    cmdActive = true;
+                    frameState = TRANSMISSION_BIT;
+                    frameV2.reset( new FrameV2 );
+                    // Mark the start bit on CMD.
+                    mResults->AddMarker( lastFallingClockEdge, AnalyzerResults::MarkerType::Start, mSettings->mCmdChannel );
+                }
+            }
+            else
+            {
+                if( FrameStateMachine() )
+                    cmdActive = false;
+            }
+
+            // --- DAT start detection and decoding ---
+            if( mDAT0 )
+            {
+                const BitState dat0_now = mDAT0->GetBitState();
+                const bool have_4bit = ( mDAT1 && mDAT2 && mDAT3 );
+
+                if( !dataActive )
+                {
+                    bool start_cond = false;
+                    if( prevDat0 == BIT_HIGH && dat0_now == BIT_LOW )
+                    {
+                        if( have_4bit )
+                        {
+                            start_cond = ( mDAT1->GetBitState() == BIT_LOW ) && ( mDAT2->GetBitState() == BIT_LOW ) &&
+                                         ( mDAT3->GetBitState() == BIT_LOW );
+                        }
+                        else
+                        {
+                            start_cond = true;
+                        }
+                    }
+
+                    if( start_cond )
+                    {
+                        dataActive = true;
+                        dataUsing4Bit = have_4bit;
+                        dataNibbleCount = 0;
+                        dataByteAcc = 0;
+                        dataByteStartSample = lastFallingClockEdge;
+                        dataIdleHighClocks = 0;
+                        dataBytesDecodedInPhase = 0;
+
+                        remainingDataBytes = expectedDataBytes;
+                        trailerBitsRemaining = 0;
+
+                        mResults->AddMarker( lastFallingClockEdge, AnalyzerResults::MarkerType::Start, mSettings->mDAT0Channel );
+                    }
+                }
+                else
+                {
+                    if( trailerBitsRemaining > 0 )
+                    {
+                        trailerBitsRemaining--;
+                        if( trailerBitsRemaining == 0 )
+                        {
+                            dataActive = false;
+                            expectedDataBytes = 0; // consumed
+                            mResults->AddMarker( sampleNumber, AnalyzerResults::MarkerType::Stop, mSettings->mDAT0Channel );
+                        }
+                    }
+                    else
+                    {
+                        bool can_decode = true;
+
+                        // Heuristic termination when we don't know the expected length.
+                        // If all DAT lines are high for a while after having decoded at least one byte,
+                        // we assume the data phase has ended.
+                        if( remainingDataBytes == 0 )
+                        {
+                            const bool all_high = have_4bit ? ( mDAT0->GetBitState() == BIT_HIGH && mDAT1->GetBitState() == BIT_HIGH &&
+                                                               mDAT2->GetBitState() == BIT_HIGH && mDAT3->GetBitState() == BIT_HIGH )
+                                                           : ( mDAT0->GetBitState() == BIT_HIGH );
+                            if( all_high )
+                                dataIdleHighClocks++;
+                            else
+                                dataIdleHighClocks = 0;
+
+                            if( dataBytesDecodedInPhase > 0 && dataIdleHighClocks >= 64 )
+                            {
+                                dataActive = false;
+                                expectedDataBytes = 0;
+                                mResults->AddMarker( sampleNumber, AnalyzerResults::MarkerType::Stop, mSettings->mDAT0Channel );
+                                can_decode = false;
+                            }
+                        }
+
+                        if( can_decode )
+                        {
+                            if( dataUsing4Bit )
+                            {
+                                const U8 nibble = ( (U8)mDAT3->GetBitState() << 3 ) | ( (U8)mDAT2->GetBitState() << 2 ) |
+                                                  ( (U8)mDAT1->GetBitState() << 1 ) | ( (U8)mDAT0->GetBitState() << 0 );
+
+                                if( dataNibbleCount == 0 )
+                                {
+                                    dataByteAcc = nibble;
+                                    dataNibbleCount = 1;
+                                    dataByteStartSample = lastFallingClockEdge;
+                                }
+                                else
+                                {
+                                    dataByteAcc = (U8)( ( dataByteAcc << 4 ) | nibble );
+                                    dataNibbleCount = 0;
+
+                                    Frame frame;
+                                    frame.mStartingSampleInclusive = dataByteStartSample;
+                                    frame.mEndingSampleInclusive = mClock->GetSampleOfNextEdge();
+                                    frame.mFlags = 0;
+                                    frame.mData1 = dataByteAcc;
+                                    frame.mData2 = 4;
+                                    frame.mType = FRAME_DATA;
+                                    mResults->AddFrame( frame );
+
+                                    FrameV2 data_frame;
+                                    data_frame.AddByte( "DATA", dataByteAcc );
+                                    mResults->AddFrameV2( data_frame, "DATA", frame.mStartingSampleInclusive, frame.mEndingSampleInclusive );
+                                    dataBytesDecodedInPhase++;
+
+                                    if( remainingDataBytes > 0 )
+                                    {
+                                        remainingDataBytes--;
+                                        if( remainingDataBytes == 0 )
+                                        {
+                                            // CRC16 (16 clocks) + end bit (1 clock) for each line, transmitted in parallel.
+                                            trailerBitsRemaining = 17;
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // 1-bit mode: sample DAT0 serially.
+                                if( dataNibbleCount == 0 )
+                                    dataByteStartSample = lastFallingClockEdge;
+                                dataByteAcc = (U8)( ( dataByteAcc << 1 ) | (U8)mDAT0->GetBitState() );
+                                dataNibbleCount++;
+                                if( dataNibbleCount == 8 )
+                                {
+                                    Frame frame;
+                                    frame.mStartingSampleInclusive = dataByteStartSample;
+                                    frame.mEndingSampleInclusive = mClock->GetSampleOfNextEdge();
+                                    frame.mFlags = 0;
+                                    frame.mData1 = dataByteAcc;
+                                    frame.mData2 = 1;
+                                    frame.mType = FRAME_DATA;
+                                    mResults->AddFrame( frame );
+
+                                    FrameV2 data_frame;
+                                    data_frame.AddByte( "DATA", dataByteAcc );
+                                    mResults->AddFrameV2( data_frame, "DATA", frame.mStartingSampleInclusive, frame.mEndingSampleInclusive );
+                                    dataBytesDecodedInPhase++;
+
+                                    dataNibbleCount = 0;
+                                    dataByteAcc = 0;
+
+                                    if( remainingDataBytes > 0 )
+                                    {
+                                        remainingDataBytes--;
+                                        if( remainingDataBytes == 0 )
+                                            trailerBitsRemaining = 17;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                prevDat0 = dat0_now;
+            }
+
+            prevCmd = cmd_now;
+        }
+        else
+        {
+            // Falling edge.
+            lastFallingClockEdge = sampleNumber;
+        }
 
         mResults->CommitResults();
-        ReportProgress( mClock->GetSampleNumber() );
+        ReportProgress( sampleNumber );
     }
 }
 
@@ -297,6 +507,9 @@ bool SDIOAnalyzer::FrameStateMachine( void )
 
             frameV2->AddByteArray( "ARG", data, 4 );
 
+            if( isCmd )
+                lastArg32 = (U32)frame.mData1;
+
             for( signed int i = 24; i >= 0; i -= 8 )
                 expectedCRC = sdCRC7( expectedCRC, 0xFF & ( frame.mData1 >> i ) );
 
@@ -388,6 +601,29 @@ bool SDIOAnalyzer::FrameStateMachine( void )
 
     case STOP:
         mResults->AddMarker( mClock->GetSampleNumber(), SDIOAnalyzerResults::MarkerType::Stop, mSettings->mCmdChannel );
+
+        // Best-effort: infer expected data length for CMD53 (IO_RW_EXTENDED).
+        // This lets the DAT decoder stop at a deterministic point instead of relying on heuristics.
+        if( isCmd && lastCommand == 53 )
+        {
+            // Argument fields per SDIO spec:
+            // [31] RW flag, [27] block mode, [8:0] count (0 => 512)
+            const bool block_mode = ( ( lastArg32 >> 27 ) & 0x1 ) != 0;
+            U32 count = lastArg32 & 0x1FF;
+            if( count == 0 )
+                count = 512;
+
+            if( !block_mode )
+            {
+                expectedDataBytes = count;
+            }
+            else
+            {
+                // Block size is configurable and not known here. 512 is a common/default; this is still useful.
+                expectedDataBytes = count * 512;
+            }
+        }
+
         if( isCmd )
         {
             mResults->AddFrameV2( *frameV2, "CMD", startingSampleInclusive, endingSampleInclusive );

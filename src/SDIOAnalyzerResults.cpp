@@ -45,6 +45,20 @@ void SDIOAnalyzerResults::GenerateBubbleText( U64 frame_index, Channel& channel,
     char number_str1[ 128 ];
     char number_str2[ 128 ];
 
+    const bool on_cmd = channel == mSettings->mCmdChannel;
+    const bool on_dat = ( mSettings->mDAT0Channel != UNDEFINED_CHANNEL && channel == mSettings->mDAT0Channel );
+
+    if( frame.mType == SDIOAnalyzer::FRAME_DATA )
+    {
+        if( !on_dat )
+            return;
+    }
+    else
+    {
+        if( !on_cmd )
+            return;
+    }
+
     switch( frame.mType )
     {
     case SDIOAnalyzer::FRAME_DIR:
@@ -86,6 +100,23 @@ void SDIOAnalyzerResults::GenerateBubbleText( U64 frame_index, Channel& channel,
         AddResultString( frame.mData2 ? "CRC OK" : "BAD CRC" );
         break;
 
+    case SDIOAnalyzer::FRAME_DATA:
+        // mData1 = byte, mData2 = bus width (1 or 4)
+        AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, number_str1, 128 );
+        if( frame.mData2 == 4 )
+        {
+            AddResultString( "D", number_str1 );
+            AddResultString( "DAT", number_str1 );
+            AddResultString( "DAT(4): ", number_str1 );
+        }
+        else
+        {
+            AddResultString( "D", number_str1 );
+            AddResultString( "DAT", number_str1 );
+            AddResultString( "DAT(1): ", number_str1 );
+        }
+        break;
+
     default:
         break;
     }
@@ -114,6 +145,30 @@ void SDIOAnalyzerResults::GenerateExportFile( const char* file, DisplayBase disp
     for( U32 i = 0; i < num_frames; i++ )
     {
         Frame frame = GetFrame( i );
+
+        // Data bytes are not part of the CMD/RESP 48/136-bit framing. Export them as standalone rows.
+        if( frame.mType == SDIOAnalyzer::FRAME_DATA )
+        {
+            AnalyzerHelpers::GetTimeString( frame.mStartingSampleInclusive, trigger_sample, sample_rate, value_str, 128 );
+            file_stream << value_str;
+            file_stream << "," << i;
+            file_stream << ",D";  // DIR column
+            file_stream << ",";   // CMD column
+            AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, value_str, 128 );
+            file_stream << "," << value_str; // ARG1 column
+            file_stream << ",";              // ARG2
+            file_stream << ",";              // CRC
+            file_stream << ",";              // PASS
+            file_stream << std::endl;
+
+            if( UpdateExportProgressAndCheckForCancel( i, num_frames ) )
+            {
+                file_stream.close();
+                return;
+            }
+
+            continue;
+        }
 
         switch( current_state )
         {
@@ -231,12 +286,53 @@ void SDIOAnalyzerResults::GenerateExportFile( const char* file, DisplayBase disp
 
 void SDIOAnalyzerResults::GenerateFrameTabularText( U64 frame_index, DisplayBase display_base )
 {
-    // Frame frame = GetFrame( frame_index );
-    // ClearResultStrings();
+    Frame frame = GetFrame( frame_index );
+    ClearResultStrings();
 
-    // char number_str[128];
-    // AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, number_str, 128 );
-    // AddResultString( number_str );
+    char number_str1[ 128 ];
+    char number_str2[ 128 ];
+
+    switch( frame.mType )
+    {
+    case SDIOAnalyzer::FRAME_DIR:
+        AddResultString( frame.mData1 ? "DIR: Host" : "DIR: Slave" );
+        break;
+
+    case SDIOAnalyzer::FRAME_CMD:
+        AnalyzerHelpers::GetNumberString( frame.mData1, Decimal, 6, number_str1, 128 );
+        if( frame.mData2 )
+            AddResultString( "CMD", number_str1 );
+        else
+            AddResultString( "RSP", number_str1 );
+        break;
+
+    case SDIOAnalyzer::FRAME_ARG:
+        AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 32, number_str1, 128 );
+        AddResultString( "ARG ", number_str1 );
+        break;
+
+    case SDIOAnalyzer::FRAME_LONG_ARG:
+        AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 64, number_str1, 128 );
+        AnalyzerHelpers::GetNumberString( frame.mData2, display_base, 64, number_str2, 128 );
+        AddResultString( "LONG: ", number_str1, number_str2 );
+        break;
+
+    case SDIOAnalyzer::FRAME_CRC:
+        AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 7, number_str1, 128 );
+        AddResultString( frame.mData2 ? "CRC OK " : "CRC BAD ", number_str1 );
+        break;
+
+    case SDIOAnalyzer::FRAME_DATA:
+        AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, number_str1, 128 );
+        if( frame.mData2 == 4 )
+            AddResultString( "DATA(4): ", number_str1 );
+        else
+            AddResultString( "DATA(1): ", number_str1 );
+        break;
+
+    default:
+        break;
+    }
 }
 
 void SDIOAnalyzerResults::GeneratePacketTabularText( U64 packet_id, DisplayBase display_base )
