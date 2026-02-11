@@ -28,6 +28,9 @@ ninja -C build install
 
 - DAT bytes appear as separate rows with Type `DATA`.
 - The table includes `DATA` (byte value) and `WIDTH` (1 or 4).
+- CMD52/CMD53 rows include a `PARSING` column with decoded fields (e.g., `WRITE | FUNC=0 | RAW=0 | ADDR=0x210 | DATA=0x80`).
+- RESP52/RESP53 rows include R5 decoding (STATE/FN/DATA plus asserted flags like `COM_CRC_ERROR`, `ILLEGAL_COMMAND`, `ERROR`, `OUT_OF_RANGE`).
+- Additional command/response parsing is included for CMD0/3/5/7/8/11/12/13/16/59 and their standard response types (R1/R4/R6/R7).
 
 ### Notes
 
