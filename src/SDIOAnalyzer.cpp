@@ -684,7 +684,11 @@ bool SDIOAnalyzer::FrameStateMachine( void )
             mResults->AddFrame( frame );
             mResults->AddMarker( startOfNextFrame + 1, SDIOAnalyzerResults::MarkerType::Dot, mSettings->mCmdChannel );
 
-            frameV2->AddByte( "CMD", frame.mData1 );
+            {
+                char cmd_str[ 8 ];
+                std::snprintf( cmd_str, sizeof( cmd_str ), "%u", static_cast<unsigned>( frame.mData1 ) );
+                frameV2->AddString( "CMD", cmd_str );
+            }
             frameV2->AddBoolean( "DIR", frame.mData2 );
 
             expectedCRC = sdCRC7( 0, ( frame.mData2 << 6 ) | frame.mData1 );
