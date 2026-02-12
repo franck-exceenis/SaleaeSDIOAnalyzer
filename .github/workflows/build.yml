@@ -2,13 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [master]
-    tags:
-      - '*'
   pull_request:
-    branches: [master]
   workflow_dispatch:
-  
+
 jobs:
   windows:
     runs-on: windows-latest
