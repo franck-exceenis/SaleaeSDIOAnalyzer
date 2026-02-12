@@ -21,8 +21,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "SDIOAnalyzerSettings.h"
 #include <AnalyzerHelpers.h>
+
+#include "SDIOAnalyzerSettings.h"
 
 
 SDIOAnalyzerSettings::SDIOAnalyzerSettings()

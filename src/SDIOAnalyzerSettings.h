@@ -20,9 +20,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
-#ifndef SDIO_ANALYZER_SETTINGS
-#define SDIO_ANALYZER_SETTINGS
+#pragma once
 
 #include <AnalyzerSettings.h>
 #include <AnalyzerTypes.h>
@@ -56,5 +54,3 @@ class SDIOAnalyzerSettings : public AnalyzerSettings
     std::unique_ptr<AnalyzerSettingInterfaceChannel> mDAT2ChannelInterface;
     std::unique_ptr<AnalyzerSettingInterfaceChannel> mDAT3ChannelInterface;
 };
-
-#endif // SDIO_ANALYZER_SETTINGS

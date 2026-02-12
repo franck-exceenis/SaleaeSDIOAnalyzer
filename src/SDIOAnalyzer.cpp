@@ -21,246 +21,248 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "SDIOAnalyzer.h"
-#include "SDIOAnalyzerSettings.h"
-#include <AnalyzerChannelData.h>
-#include <AnalyzerResults.h>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string>
 
+#include <AnalyzerChannelData.h>
+#include <AnalyzerResults.h>
+
+#include "SDIOAnalyzer.h"
+#include "SDIOAnalyzerSettings.h"
+
 namespace
 {
-const char* R1StateText( U32 state )
-{
-    switch( state )
+    const char* R1StateText( U32 state )
     {
-    case 0:
-        return "IDLE";
-    case 1:
-        return "READY";
-    case 2:
-        return "IDENT";
-    case 3:
-        return "STBY";
-    case 4:
-        return "TRAN";
-    case 5:
-        return "DATA";
-    case 6:
-        return "RCV";
-    case 7:
-        return "PRG";
-    case 8:
-        return "DIS";
-    default:
-        return "RFU";
+        switch( state )
+        {
+        case 0:
+            return "IDLE";
+        case 1:
+            return "READY";
+        case 2:
+            return "IDENT";
+        case 3:
+            return "STBY";
+        case 4:
+            return "TRAN";
+        case 5:
+            return "DATA";
+        case 6:
+            return "RCV";
+        case 7:
+            return "PRG";
+        case 8:
+            return "DIS";
+        default:
+            return "RFU";
+        }
     }
-}
 
-std::string BuildR1String( U32 status )
-{
-    char buf[ 128 ];
-    const U32 state = ( status >> 9 ) & 0xF;
-    const U32 ready = ( status >> 8 ) & 0x1;
-    std::snprintf( buf, sizeof( buf ), "STATUS=0x%08X | STATE=%s | READY=%u", status, R1StateText( state ), ready );
-    return std::string( buf );
-}
-
-std::string BuildParsingString( U32 cmd, U32 arg, bool is_cmd_packet )
-{
-    char buf[ 128 ];
-
-    if( cmd == 0 )
+    std::string BuildR1String( U32 status )
     {
-        if( is_cmd_packet )
-            return std::string( "GO_IDLE" );
-        return std::string();
-    }
-    else if( cmd == 3 )
-    {
-        if( is_cmd_packet )
-        {
-            const U32 rca = ( arg >> 16 ) & 0xFFFF;
-            std::snprintf( buf, sizeof( buf ), "RCA=0x%04X", rca );
-            return std::string( buf );
-        }
-        else
-        {
-            const U32 rca = ( arg >> 16 ) & 0xFFFF;
-            const U32 status = arg & 0xFFFF;
-            std::snprintf( buf, sizeof( buf ), "RCA=0x%04X | STATUS=0x%04X", rca, status );
-            return std::string( buf );
-        }
-    }
-    else if( cmd == 5 )
-    {
-        if( is_cmd_packet )
-        {
-            const U32 ocr = arg & 0xFFFFFF;
-            const U32 s18 = ( arg >> 24 ) & 0x1;
-            std::snprintf( buf, sizeof( buf ), "OCR=0x%06X | S18=%u", ocr, s18 );
-            return std::string( buf );
-        }
-        else
-        {
-            const U32 ready = ( arg >> 31 ) & 0x1;
-            const U32 num_io = ( arg >> 28 ) & 0x7;
-            const U32 mem = ( arg >> 27 ) & 0x1;
-            const U32 ocr = arg & 0xFFFFFF;
-            std::snprintf( buf, sizeof( buf ), "READY=%u | NUM_IO=%u | MEM_PRESENT=%u | OCR=0x%06X", ready, num_io, mem, ocr );
-            return std::string( buf );
-        }
-    }
-    else if( cmd == 7 )
-    {
-        if( is_cmd_packet )
-        {
-            const U32 rca = ( arg >> 16 ) & 0xFFFF;
-            if( rca == 0 )
-                return std::string( "DESELECT RCA=0x0000" );
-            std::snprintf( buf, sizeof( buf ), "SELECT RCA=0x%04X", rca );
-            return std::string( buf );
-        }
-        return BuildR1String( arg );
-    }
-    else if( cmd == 8 )
-    {
-        const U32 vhs = ( arg >> 8 ) & 0xF;
-        const U32 check = arg & 0xFF;
-        std::snprintf( buf, sizeof( buf ), "VHS=0x%X | CHECK=0x%02X", vhs, check );
+        char buf[ 128 ];
+        const U32 state = ( status >> 9 ) & 0xF;
+        const U32 ready = ( status >> 8 ) & 0x1;
+        std::snprintf( buf, sizeof( buf ), "STATUS=0x%08X | STATE=%s | READY=%u", status, R1StateText( state ), ready );
         return std::string( buf );
     }
-    else if( cmd == 11 )
+
+    std::string BuildParsingString( U32 cmd, U32 arg, bool is_cmd_packet )
     {
-        if( is_cmd_packet )
-            return std::string( "VOLTAGE_SWITCH" );
-        return BuildR1String( arg );
-    }
-    else if( cmd == 12 )
-    {
-        if( is_cmd_packet )
-            return std::string( "STOP_TRANSMISSION" );
-        return BuildR1String( arg );
-    }
-    else if( cmd == 13 )
-    {
-        if( is_cmd_packet )
+        char buf[ 128 ];
+
+        if( cmd == 0 )
         {
-            const U32 rca = ( arg >> 16 ) & 0xFFFF;
-            std::snprintf( buf, sizeof( buf ), "RCA=0x%04X", rca );
+            if( is_cmd_packet )
+                return std::string( "GO_IDLE" );
+            return std::string();
+        }
+        else if( cmd == 3 )
+        {
+            if( is_cmd_packet )
+            {
+                const U32 rca = ( arg >> 16 ) & 0xFFFF;
+                std::snprintf( buf, sizeof( buf ), "RCA=0x%04X", rca );
+                return std::string( buf );
+            }
+            else
+            {
+                const U32 rca = ( arg >> 16 ) & 0xFFFF;
+                const U32 status = arg & 0xFFFF;
+                std::snprintf( buf, sizeof( buf ), "RCA=0x%04X | STATUS=0x%04X", rca, status );
+                return std::string( buf );
+            }
+        }
+        else if( cmd == 5 )
+        {
+            if( is_cmd_packet )
+            {
+                const U32 ocr = arg & 0xFFFFFF;
+                const U32 s18 = ( arg >> 24 ) & 0x1;
+                std::snprintf( buf, sizeof( buf ), "OCR=0x%06X | S18=%u", ocr, s18 );
+                return std::string( buf );
+            }
+            else
+            {
+                const U32 ready = ( arg >> 31 ) & 0x1;
+                const U32 num_io = ( arg >> 28 ) & 0x7;
+                const U32 mem = ( arg >> 27 ) & 0x1;
+                const U32 ocr = arg & 0xFFFFFF;
+                std::snprintf( buf, sizeof( buf ), "READY=%u | NUM_IO=%u | MEM_PRESENT=%u | OCR=0x%06X", ready, num_io, mem, ocr );
+                return std::string( buf );
+            }
+        }
+        else if( cmd == 7 )
+        {
+            if( is_cmd_packet )
+            {
+                const U32 rca = ( arg >> 16 ) & 0xFFFF;
+                if( rca == 0 )
+                    return std::string( "DESELECT RCA=0x0000" );
+                std::snprintf( buf, sizeof( buf ), "SELECT RCA=0x%04X", rca );
+                return std::string( buf );
+            }
+            return BuildR1String( arg );
+        }
+        else if( cmd == 8 )
+        {
+            const U32 vhs = ( arg >> 8 ) & 0xF;
+            const U32 check = arg & 0xFF;
+            std::snprintf( buf, sizeof( buf ), "VHS=0x%X | CHECK=0x%02X", vhs, check );
             return std::string( buf );
         }
-        return BuildR1String( arg );
+        else if( cmd == 11 )
+        {
+            if( is_cmd_packet )
+                return std::string( "VOLTAGE_SWITCH" );
+            return BuildR1String( arg );
+        }
+        else if( cmd == 12 )
+        {
+            if( is_cmd_packet )
+                return std::string( "STOP_TRANSMISSION" );
+            return BuildR1String( arg );
+        }
+        else if( cmd == 13 )
+        {
+            if( is_cmd_packet )
+            {
+                const U32 rca = ( arg >> 16 ) & 0xFFFF;
+                std::snprintf( buf, sizeof( buf ), "RCA=0x%04X", rca );
+                return std::string( buf );
+            }
+            return BuildR1String( arg );
+        }
+        else if( cmd == 16 )
+        {
+            if( is_cmd_packet )
+            {
+                std::snprintf( buf, sizeof( buf ), "BLOCKLEN=%u", arg );
+                return std::string( buf );
+            }
+            return BuildR1String( arg );
+        }
+        else if( cmd == 59 )
+        {
+            if( is_cmd_packet )
+            {
+                const U32 on = arg & 0x1;
+                std::snprintf( buf, sizeof( buf ), "CRC_ON=%u", on );
+                return std::string( buf );
+            }
+            return BuildR1String( arg );
+        }
+
+        if( cmd == 52 )
+        {
+            if( is_cmd_packet )
+            {
+                const bool write = ( ( arg >> 31 ) & 0x1 ) != 0;
+                const U32 func = ( arg >> 28 ) & 0x7;
+                const U32 raw = ( arg >> 27 ) & 0x1;
+                const U32 addr = ( arg >> 9 ) & 0x1FFFF;
+                const U32 data = arg & 0xFF;
+                std::snprintf( buf, sizeof( buf ), "%s | FUNC=%u | RAW=%u | ADDR=0x%X | DATA=0x%02X", write ? "WRITE" : "READ", func, raw,
+                               addr, data );
+                return std::string( buf );
+            }
+            else
+            {
+                const U32 v = arg & 0xFFFF;
+                const U32 state = ( v >> 12 ) & 0x3;
+                const U32 fn = ( v >> 8 ) & 0x7;
+                const U32 data = v & 0xFF;
+                const bool crc = ( v & ( 1u << 15 ) ) != 0;
+                const bool ill = ( v & ( 1u << 14 ) ) != 0;
+                const bool err = ( v & ( 1u << 11 ) ) != 0;
+                const bool oor = ( v & ( 1u << 7 ) ) != 0;
+
+                const char* state_txt[] = { "DIS", "CMD", "TRN", "RFU" };
+                std::string flags;
+                if( crc )
+                    flags += "COM_CRC_ERROR";
+                if( ill )
+                    flags += flags.empty() ? "ILLEGAL_COMMAND" : ", ILLEGAL_COMMAND";
+                if( err )
+                    flags += flags.empty() ? "ERROR" : ", ERROR";
+                if( oor )
+                    flags += flags.empty() ? "OUT_OF_RANGE" : ", OUT_OF_RANGE";
+
+                std::snprintf( buf, sizeof( buf ), "STATE=%s | FN=%u | DATA=0x%02X", state_txt[ state ], fn, data );
+                std::string out = buf;
+                if( !flags.empty() )
+                    out += " | FLAGS: " + flags;
+                return out;
+            }
+        }
+        else if( cmd == 53 )
+        {
+            if( is_cmd_packet )
+            {
+                const bool write = ( ( arg >> 31 ) & 0x1 ) != 0;
+                const U32 func = ( arg >> 28 ) & 0x7;
+                const U32 raw = ( arg >> 26 ) & 0x1; // op-code, labeled RAW per request
+                const U32 addr = ( arg >> 9 ) & 0x1FFFF;
+                const U32 count = arg & 0x1FF;
+                std::snprintf( buf, sizeof( buf ), "%s | FN=%u | RAW=%u | ADDR=0x%X | DATA=0x%X", write ? "WRITE" : "READ", func, raw, addr,
+                               count );
+                return std::string( buf );
+            }
+            else
+            {
+                const U32 v = arg & 0xFFFF;
+                const U32 state = ( v >> 12 ) & 0x3;
+                const U32 fn = ( v >> 8 ) & 0x7;
+                const U32 data = v & 0xFF;
+                const bool crc = ( v & ( 1u << 15 ) ) != 0;
+                const bool ill = ( v & ( 1u << 14 ) ) != 0;
+                const bool err = ( v & ( 1u << 11 ) ) != 0;
+                const bool oor = ( v & ( 1u << 7 ) ) != 0;
+
+                const char* state_txt[] = { "DIS", "CMD", "TRN", "RFU" };
+                std::string flags;
+                if( crc )
+                    flags += "COM_CRC_ERROR";
+                if( ill )
+                    flags += flags.empty() ? "ILLEGAL_COMMAND" : ", ILLEGAL_COMMAND";
+                if( err )
+                    flags += flags.empty() ? "ERROR" : ", ERROR";
+                if( oor )
+                    flags += flags.empty() ? "OUT_OF_RANGE" : ", OUT_OF_RANGE";
+
+                std::snprintf( buf, sizeof( buf ), "STATE=%s | FN=%u | DATA=0x%02X", state_txt[ state ], fn, data );
+                std::string out = buf;
+                if( !flags.empty() )
+                    out += " | FLAGS: " + flags;
+                return out;
+            }
+        }
+
+        return std::string();
     }
-    else if( cmd == 16 )
-    {
-        if( is_cmd_packet )
-        {
-            std::snprintf( buf, sizeof( buf ), "BLOCKLEN=%u", arg );
-            return std::string( buf );
-        }
-        return BuildR1String( arg );
-    }
-    else if( cmd == 59 )
-    {
-        if( is_cmd_packet )
-        {
-            const U32 on = arg & 0x1;
-            std::snprintf( buf, sizeof( buf ), "CRC_ON=%u", on );
-            return std::string( buf );
-        }
-        return BuildR1String( arg );
-    }
-
-    if( cmd == 52 )
-    {
-        if( is_cmd_packet )
-        {
-            const bool write = ( ( arg >> 31 ) & 0x1 ) != 0;
-            const U32 func = ( arg >> 28 ) & 0x7;
-            const U32 raw = ( arg >> 27 ) & 0x1;
-            const U32 addr = ( arg >> 9 ) & 0x1FFFF;
-            const U32 data = arg & 0xFF;
-            std::snprintf( buf, sizeof( buf ), "%s | FUNC=%u | RAW=%u | ADDR=0x%X | DATA=0x%02X", write ? "WRITE" : "READ",
-                           func, raw, addr, data );
-            return std::string( buf );
-        }
-        else
-        {
-            const U32 v = arg & 0xFFFF;
-            const U32 state = ( v >> 12 ) & 0x3;
-            const U32 fn = ( v >> 8 ) & 0x7;
-            const U32 data = v & 0xFF;
-            const bool crc = ( v & ( 1u << 15 ) ) != 0;
-            const bool ill = ( v & ( 1u << 14 ) ) != 0;
-            const bool err = ( v & ( 1u << 11 ) ) != 0;
-            const bool oor = ( v & ( 1u << 7 ) ) != 0;
-
-            const char* state_txt[] = { "DIS", "CMD", "TRN", "RFU" };
-            std::string flags;
-            if( crc )
-                flags += "COM_CRC_ERROR";
-            if( ill )
-                flags += flags.empty() ? "ILLEGAL_COMMAND" : ", ILLEGAL_COMMAND";
-            if( err )
-                flags += flags.empty() ? "ERROR" : ", ERROR";
-            if( oor )
-                flags += flags.empty() ? "OUT_OF_RANGE" : ", OUT_OF_RANGE";
-
-            std::snprintf( buf, sizeof( buf ), "STATE=%s | FN=%u | DATA=0x%02X", state_txt[ state ], fn, data );
-            std::string out = buf;
-            if( !flags.empty() )
-                out += " | FLAGS: " + flags;
-            return out;
-        }
-    }
-    else if( cmd == 53 )
-    {
-        if( is_cmd_packet )
-        {
-            const bool write = ( ( arg >> 31 ) & 0x1 ) != 0;
-            const U32 func = ( arg >> 28 ) & 0x7;
-            const U32 raw = ( arg >> 26 ) & 0x1; // op-code, labeled RAW per request
-            const U32 addr = ( arg >> 9 ) & 0x1FFFF;
-            const U32 count = arg & 0x1FF;
-            std::snprintf( buf, sizeof( buf ), "%s | FN=%u | RAW=%u | ADDR=0x%X | DATA=0x%X", write ? "WRITE" : "READ", func,
-                           raw, addr, count );
-            return std::string( buf );
-        }
-        else
-        {
-            const U32 v = arg & 0xFFFF;
-            const U32 state = ( v >> 12 ) & 0x3;
-            const U32 fn = ( v >> 8 ) & 0x7;
-            const U32 data = v & 0xFF;
-            const bool crc = ( v & ( 1u << 15 ) ) != 0;
-            const bool ill = ( v & ( 1u << 14 ) ) != 0;
-            const bool err = ( v & ( 1u << 11 ) ) != 0;
-            const bool oor = ( v & ( 1u << 7 ) ) != 0;
-
-            const char* state_txt[] = { "DIS", "CMD", "TRN", "RFU" };
-            std::string flags;
-            if( crc )
-                flags += "COM_CRC_ERROR";
-            if( ill )
-                flags += flags.empty() ? "ILLEGAL_COMMAND" : ", ILLEGAL_COMMAND";
-            if( err )
-                flags += flags.empty() ? "ERROR" : ", ERROR";
-            if( oor )
-                flags += flags.empty() ? "OUT_OF_RANGE" : ", OUT_OF_RANGE";
-
-            std::snprintf( buf, sizeof( buf ), "STATE=%s | FN=%u | DATA=0x%02X", state_txt[ state ], fn, data );
-            std::string out = buf;
-            if( !flags.empty() )
-                out += " | FLAGS: " + flags;
-            return out;
-        }
-    }
-
-    return std::string();
-}
 } // namespace
 
 U32 sdCRC7( U32 crc, U8 messageByte )
@@ -274,7 +276,6 @@ U32 sdCRC7( U32 crc, U8 messageByte )
     }
     return ( crc & 0x7F );
 }
-
 
 SDIOAnalyzer::SDIOAnalyzer()
     : Analyzer2(),
@@ -430,13 +431,13 @@ void SDIOAnalyzer::WorkerThread()
                         bool can_decode = true;
 
                         // Heuristic termination when we don't know the expected length.
-                        // If all DAT lines are high for a while after having decoded at least one byte,
-                        // we assume the data phase has ended.
+                        // If all DAT lines are high for a while after having decoded at
+                        // least one byte, we assume the data phase has ended.
                         if( remainingDataBytes == 0 )
                         {
                             const bool all_high = have_4bit ? ( mDAT0->GetBitState() == BIT_HIGH && mDAT1->GetBitState() == BIT_HIGH &&
-                                                               mDAT2->GetBitState() == BIT_HIGH && mDAT3->GetBitState() == BIT_HIGH )
-                                                           : ( mDAT0->GetBitState() == BIT_HIGH );
+                                                                mDAT2->GetBitState() == BIT_HIGH && mDAT3->GetBitState() == BIT_HIGH )
+                                                            : ( mDAT0->GetBitState() == BIT_HIGH );
                             if( all_high )
                                 dataIdleHighClocks++;
                             else
@@ -455,8 +456,8 @@ void SDIOAnalyzer::WorkerThread()
                         {
                             if( dataUsing4Bit )
                             {
-                                const U8 nibble = ( (U8)mDAT3->GetBitState() << 3 ) | ( (U8)mDAT2->GetBitState() << 2 ) |
-                                                  ( (U8)mDAT1->GetBitState() << 1 ) | ( (U8)mDAT0->GetBitState() << 0 );
+                                const U8 nibble = ( ( U8 )mDAT3->GetBitState() << 3 ) | ( ( U8 )mDAT2->GetBitState() << 2 ) |
+                                                  ( ( U8 )mDAT1->GetBitState() << 1 ) | ( ( U8 )mDAT0->GetBitState() << 0 );
 
                                 if( dataNibbleCount == 0 )
                                 {
@@ -466,7 +467,7 @@ void SDIOAnalyzer::WorkerThread()
                                 }
                                 else
                                 {
-                                    dataByteAcc = (U8)( ( dataByteAcc << 4 ) | nibble );
+                                    dataByteAcc = ( U8 )( ( dataByteAcc << 4 ) | nibble );
                                     dataNibbleCount = 0;
 
                                     Frame frame;
@@ -480,7 +481,8 @@ void SDIOAnalyzer::WorkerThread()
 
                                     FrameV2 data_frame;
                                     data_frame.AddByte( "DATA", dataByteAcc );
-                                    mResults->AddFrameV2( data_frame, "DATA", frame.mStartingSampleInclusive, frame.mEndingSampleInclusive );
+                                    mResults->AddFrameV2( data_frame, "DATA", frame.mStartingSampleInclusive,
+                                                          frame.mEndingSampleInclusive );
                                     dataBytesDecodedInPhase++;
 
                                     if( remainingDataBytes > 0 )
@@ -488,7 +490,8 @@ void SDIOAnalyzer::WorkerThread()
                                         remainingDataBytes--;
                                         if( remainingDataBytes == 0 )
                                         {
-                                            // CRC16 (16 clocks) + end bit (1 clock) for each line, transmitted in parallel.
+                                            // CRC16 (16 clocks) + end bit (1 clock) for each line,
+                                            // transmitted in parallel.
                                             trailerBitsRemaining = 17;
                                         }
                                     }
@@ -499,7 +502,7 @@ void SDIOAnalyzer::WorkerThread()
                                 // 1-bit mode: sample DAT0 serially.
                                 if( dataNibbleCount == 0 )
                                     dataByteStartSample = lastFallingClockEdge;
-                                dataByteAcc = (U8)( ( dataByteAcc << 1 ) | (U8)mDAT0->GetBitState() );
+                                dataByteAcc = ( U8 )( ( dataByteAcc << 1 ) | ( U8 )mDAT0->GetBitState() );
                                 dataNibbleCount++;
                                 if( dataNibbleCount == 8 )
                                 {
@@ -514,7 +517,8 @@ void SDIOAnalyzer::WorkerThread()
 
                                     FrameV2 data_frame;
                                     data_frame.AddByte( "DATA", dataByteAcc );
-                                    mResults->AddFrameV2( data_frame, "DATA", frame.mStartingSampleInclusive, frame.mEndingSampleInclusive );
+                                    mResults->AddFrameV2( data_frame, "DATA", frame.mStartingSampleInclusive,
+                                                          frame.mEndingSampleInclusive );
                                     dataBytesDecodedInPhase++;
 
                                     dataNibbleCount = 0;
@@ -745,12 +749,12 @@ bool SDIOAnalyzer::FrameStateMachine( void )
             mResults->AddMarker( startOfNextFrame + 1, SDIOAnalyzerResults::MarkerType::Square, mSettings->mCmdChannel );
 
             frameV2->AddByteArray( "ARG", data, 4 );
-            const std::string parsing = BuildParsingString( lastCommand, (U32)frame.mData1, isCmd );
+            const std::string parsing = BuildParsingString( lastCommand, ( U32 )frame.mData1, isCmd );
             if( !parsing.empty() )
                 frameV2->AddString( "PARSING", parsing.c_str() );
 
             if( isCmd )
-                lastArg32 = (U32)frame.mData1;
+                lastArg32 = ( U32 )frame.mData1;
 
             for( signed int i = 24; i >= 0; i -= 8 )
                 expectedCRC = sdCRC7( expectedCRC, 0xFF & ( frame.mData1 >> i ) );
@@ -845,7 +849,8 @@ bool SDIOAnalyzer::FrameStateMachine( void )
         mResults->AddMarker( mClock->GetSampleNumber(), SDIOAnalyzerResults::MarkerType::Stop, mSettings->mCmdChannel );
 
         // Best-effort: infer expected data length for CMD53 (IO_RW_EXTENDED).
-        // This lets the DAT decoder stop at a deterministic point instead of relying on heuristics.
+        // This lets the DAT decoder stop at a deterministic point instead of
+        // relying on heuristics.
         if( isCmd && lastCommand == 53 )
         {
             // Argument fields per SDIO spec:
@@ -861,7 +866,8 @@ bool SDIOAnalyzer::FrameStateMachine( void )
             }
             else
             {
-                // Block size is configurable and not known here. 512 is a common/default; this is still useful.
+                // Block size is configurable and not known here. 512 is a
+                // common/default; this is still useful.
                 expectedDataBytes = count * 512;
             }
         }

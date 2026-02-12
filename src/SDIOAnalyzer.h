@@ -24,9 +24,9 @@
 #ifndef SDIO_ANALYZER_H
 #define SDIO_ANALYZER_H
 
-#include <Analyzer.h>
 #include "SDIOAnalyzerResults.h"
 #include "SDIOSimulationDataGenerator.h"
+#include <Analyzer.h>
 
 class SDIOAnalyzerSettings;
 class ANALYZER_EXPORT SDIOAnalyzer : public Analyzer2
@@ -99,13 +99,13 @@ class ANALYZER_EXPORT SDIOAnalyzer : public Analyzer2
     // Data phase decoding (DAT0..DAT3)
     bool dataActive = false;
     bool dataUsing4Bit = false;
-    U32 expectedDataBytes = 0;       // set after CMD53 (best-effort)
-    U32 remainingDataBytes = 0;      // countdown during a data phase
-    U32 trailerBitsRemaining = 0;    // CRC16 (16 clocks) + end bit
-    U32 dataIdleHighClocks = 0;      // heuristic termination when expected length is unknown
+    U32 expectedDataBytes = 0;    // set after CMD53 (best-effort)
+    U32 remainingDataBytes = 0;   // countdown during a data phase
+    U32 trailerBitsRemaining = 0; // CRC16 (16 clocks) + end bit
+    U32 dataIdleHighClocks = 0;   // heuristic termination when expected length is unknown
     U32 dataBytesDecodedInPhase = 0;
     U8 dataByteAcc = 0;
-    U8 dataNibbleCount = 0;          // 0 or 1 for 4-bit mode
+    U8 dataNibbleCount = 0; // 0 or 1 for 4-bit mode
     U64 dataByteStartSample = 0;
     BitState prevCmd = BIT_HIGH;
     BitState prevDat0 = BIT_HIGH;

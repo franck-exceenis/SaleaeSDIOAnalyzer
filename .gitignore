@@ -23,5 +23,6 @@
 release/
 debug/
 build/
+.cache/
 
 .DS_Store

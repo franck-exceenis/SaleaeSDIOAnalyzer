@@ -20,11 +20,10 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+#include <AnalyzerHelpers.h>
 
 #include "SDIOSimulationDataGenerator.h"
 #include "SDIOAnalyzerSettings.h"
-
-#include <AnalyzerHelpers.h>
 
 SDIOSimulationDataGenerator::SDIOSimulationDataGenerator() : mSerialText( "My first analyzer, woo hoo!" ), mStringIndex( 0 )
 {

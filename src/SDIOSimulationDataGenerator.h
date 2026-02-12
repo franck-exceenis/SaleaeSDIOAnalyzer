@@ -20,12 +20,12 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+#pragma once
 
-#ifndef SDIO_SIMULATION_DATA_GENERATOR
-#define SDIO_SIMULATION_DATA_GENERATOR
+#include <string>
 
 #include <SimulationChannelDescriptor.h>
-#include <string>
+
 class SDIOAnalyzerSettings;
 
 class SDIOSimulationDataGenerator
@@ -48,4 +48,3 @@ class SDIOSimulationDataGenerator
 
     SimulationChannelDescriptor mSerialSimulationData;
 };
-#endif // SDIO_SIMULATION_DATA_GENERATOR

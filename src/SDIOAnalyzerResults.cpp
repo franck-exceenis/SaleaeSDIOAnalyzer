@@ -21,12 +21,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "SDIOAnalyzerResults.h"
+#include <fstream>
+#include <iostream>
+
 #include <AnalyzerHelpers.h>
+
+#include "SDIOAnalyzerResults.h"
 #include "SDIOAnalyzer.h"
 #include "SDIOAnalyzerSettings.h"
-#include <iostream>
-#include <fstream>
 
 SDIOAnalyzerResults::SDIOAnalyzerResults( SDIOAnalyzer* analyzer, SDIOAnalyzerSettings* settings )
     : AnalyzerResults(), mSettings( settings ), mAnalyzer( analyzer )
@@ -146,14 +148,15 @@ void SDIOAnalyzerResults::GenerateExportFile( const char* file, DisplayBase disp
     {
         Frame frame = GetFrame( i );
 
-        // Data bytes are not part of the CMD/RESP 48/136-bit framing. Export them as standalone rows.
+        // Data bytes are not part of the CMD/RESP 48/136-bit framing. Export them
+        // as standalone rows.
         if( frame.mType == SDIOAnalyzer::FRAME_DATA )
         {
             AnalyzerHelpers::GetTimeString( frame.mStartingSampleInclusive, trigger_sample, sample_rate, value_str, 128 );
             file_stream << value_str;
             file_stream << "," << i;
-            file_stream << ",D";  // DIR column
-            file_stream << ",";   // CMD column
+            file_stream << ",D"; // DIR column
+            file_stream << ",";  // CMD column
             AnalyzerHelpers::GetNumberString( frame.mData1, display_base, 8, value_str, 128 );
             file_stream << "," << value_str; // ARG1 column
             file_stream << ",";              // ARG2
