@@ -117,6 +117,8 @@ class ANALYZER_EXPORT SDIOAnalyzer : public Analyzer2
     U64 qwordHigh = 0;
     U64 qwordLow = 0;
     U32 lastCommand;
+    U32 pendingCommand = 0;
+    bool responsePending = false;
     U32 lastArg32 = 0;
     U32 expectedCRC;
     S64 startingSampleInclusive = 0;

@@ -22,6 +22,7 @@
 // THE SOFTWARE.
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -34,6 +35,18 @@
 
 namespace
 {
+    bool CommandExpectsResponse( U32 cmd )
+    {
+        switch( cmd )
+        {
+        case 0:
+        case 4:
+            return false;
+        default:
+            return true;
+        }
+    }
+
     const char* R1StateText( U32 state )
     {
         switch( state )
@@ -351,9 +364,11 @@ void SDIOAnalyzer::WorkerThread()
         if( mDAT3 )
             mDAT3->AdvanceToAbsPosition( sampleNumber );
 
-        if( mClock->GetBitState() == BIT_HIGH )
+        const bool sample_now =
+            mSettings->mSampleOnRisingEdge ? ( mClock->GetBitState() == BIT_HIGH ) : ( mClock->GetBitState() == BIT_LOW );
+        if( sample_now )
         {
-            // Rising clock edge: sample CMD and DAT.
+            // Selected sampling edge: sample CMD and DAT.
             mResults->AddMarker( sampleNumber, AnalyzerResults::UpArrow, mSettings->mClockChannel );
 
             // --- CMD start detection (start bit is 0, idle is 1) ---
@@ -391,6 +406,8 @@ void SDIOAnalyzer::WorkerThread()
                         {
                             start_cond = ( mDAT1->GetBitState() == BIT_LOW ) && ( mDAT2->GetBitState() == BIT_LOW ) &&
                                          ( mDAT3->GetBitState() == BIT_LOW );
+                            if( !start_cond && !mSettings->mStrict4BitStart )
+                                start_cond = true;
                         }
                         else
                         {
@@ -543,7 +560,7 @@ void SDIOAnalyzer::WorkerThread()
         }
         else
         {
-            // Falling edge.
+            // Opposite edge from the selected sampling edge.
             lastFallingClockEdge = sampleNumber;
         }
 
@@ -633,6 +650,8 @@ bool SDIOAnalyzer::FrameStateMachine( void )
     Frame frame;
     bool done = false;
     U8 respLength;
+    U32 rawCommandBits;
+    U32 parsedCommand;
 
     switch( frameState )
     {
@@ -647,10 +666,11 @@ bool SDIOAnalyzer::FrameStateMachine( void )
         frameV2->AddBoolean( "DIR", frame.mData1 );
         startingSampleInclusive = frame.mStartingSampleInclusive;
 
-        // The transmission bit tells us the origin of the packet
-        // If the bit is high the packet comes from the host
-        // If the bit is low, the packet comes from the slave
-        isCmd = mCmd->GetBitState();
+        // The transmission bit tells us the origin of the packet. When a
+        // response is expected, prefer decoding the next packet as a response.
+        // This avoids turning a slightly misaligned response into a fake host
+        // command.
+        isCmd = responsePending ? false : ( mCmd->GetBitState() == BIT_HIGH );
 
         mResults->AddMarker( lastFallingClockEdge, SDIOAnalyzerResults::MarkerType::Start, mSettings->mCmdChannel );
         if( isCmd )
@@ -678,10 +698,13 @@ bool SDIOAnalyzer::FrameStateMachine( void )
 
         if( frameCounter == 0 )
         {
+            rawCommandBits = qwordLow & 0x3F;
+            parsedCommand = isCmd ? rawCommandBits : pendingCommand;
+
             frame.mStartingSampleInclusive = startOfNextFrame;
             frame.mEndingSampleInclusive = mClock->GetSampleOfNextEdge();
             frame.mFlags = 0;
-            frame.mData1 = qwordLow & 0x3F;
+            frame.mData1 = parsedCommand;
             frame.mData2 = isCmd ? 1 : 0;
             frame.mType = FRAME_CMD;
 
@@ -695,14 +718,19 @@ bool SDIOAnalyzer::FrameStateMachine( void )
             }
             frameV2->AddBoolean( "DIR", frame.mData2 );
 
-            expectedCRC = sdCRC7( 0, ( frame.mData2 << 6 ) | frame.mData1 );
+            expectedCRC = sdCRC7( 0, ( frame.mData2 << 6 ) | rawCommandBits );
 
             // Once we have the argument
 
-            lastCommand = frame.mData1;
+            lastCommand = parsedCommand;
+            if( isCmd )
+            {
+                pendingCommand = parsedCommand;
+                responsePending = CommandExpectsResponse( parsedCommand );
+            }
 
             // Find the expected length of the next response based on the command
-            if( !isCmd && ( qwordLow == 2 || qwordLow == 9 || qwordLow == 10 ) )
+            if( !isCmd && ( parsedCommand == 2 || parsedCommand == 9 || parsedCommand == 10 ) )
             // CMD2, CMD9 and CMD10 respond with long R2 response
             {
                 respLength = 127;
@@ -878,6 +906,7 @@ bool SDIOAnalyzer::FrameStateMachine( void )
         }
         else
         {
+            responsePending = false;
             mResults->AddFrameV2( *frameV2, "RESP", startingSampleInclusive, endingSampleInclusive );
         }
         frameV2.reset( new FrameV2 );

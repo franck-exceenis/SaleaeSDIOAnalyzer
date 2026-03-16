@@ -32,7 +32,9 @@ SDIOAnalyzerSettings::SDIOAnalyzerSettings()
       mDAT0Channel( UNDEFINED_CHANNEL ),
       mDAT1Channel( UNDEFINED_CHANNEL ),
       mDAT2Channel( UNDEFINED_CHANNEL ),
-      mDAT3Channel( UNDEFINED_CHANNEL )
+      mDAT3Channel( UNDEFINED_CHANNEL ),
+      mSampleOnRisingEdge( true ),
+      mStrict4BitStart( false )
 {
     mClockChannelInterface.reset( new AnalyzerSettingInterfaceChannel() );
     mCmdChannelInterface.reset( new AnalyzerSettingInterfaceChannel() );
@@ -40,6 +42,8 @@ SDIOAnalyzerSettings::SDIOAnalyzerSettings()
     mDAT1ChannelInterface.reset( new AnalyzerSettingInterfaceChannel() );
     mDAT2ChannelInterface.reset( new AnalyzerSettingInterfaceChannel() );
     mDAT3ChannelInterface.reset( new AnalyzerSettingInterfaceChannel() );
+    mSampleEdgeInterface.reset( new AnalyzerSettingInterfaceBool() );
+    mStrict4BitStartInterface.reset( new AnalyzerSettingInterfaceBool() );
 
     mClockChannelInterface->SetTitleAndTooltip( "Clock", "Standard SDIO" );
     mCmdChannelInterface->SetTitleAndTooltip( "Command", "Standard SDIO" );
@@ -47,6 +51,10 @@ SDIOAnalyzerSettings::SDIOAnalyzerSettings()
     mDAT1ChannelInterface->SetTitleAndTooltip( "DAT1", "Standard SDIO" );
     mDAT2ChannelInterface->SetTitleAndTooltip( "DAT2", "Standard SDIO" );
     mDAT3ChannelInterface->SetTitleAndTooltip( "DAT3", "Standard SDIO" );
+    mSampleEdgeInterface->SetTitleAndTooltip( "Sample On Rising Edge",
+                                              "Sample CMD and DAT on rising edges when enabled, otherwise on falling edges." );
+    mStrict4BitStartInterface->SetTitleAndTooltip( "Strict 4-bit DAT Start",
+                                                   "Require DAT1..DAT3 low together with DAT0 for 4-bit data start detection." );
 
     mClockChannelInterface->SetChannel( mClockChannel );
     mCmdChannelInterface->SetChannel( mCmdChannel );
@@ -54,6 +62,8 @@ SDIOAnalyzerSettings::SDIOAnalyzerSettings()
     mDAT1ChannelInterface->SetChannel( mDAT1Channel );
     mDAT2ChannelInterface->SetChannel( mDAT2Channel );
     mDAT3ChannelInterface->SetChannel( mDAT3Channel );
+    mSampleEdgeInterface->SetValue( mSampleOnRisingEdge );
+    mStrict4BitStartInterface->SetValue( mStrict4BitStart );
 
     mClockChannelInterface->SetSelectionOfNoneIsAllowed( false );
     mCmdChannelInterface->SetSelectionOfNoneIsAllowed( false );
@@ -68,6 +78,8 @@ SDIOAnalyzerSettings::SDIOAnalyzerSettings()
     AddInterface( mDAT1ChannelInterface.get() );
     AddInterface( mDAT2ChannelInterface.get() );
     AddInterface( mDAT3ChannelInterface.get() );
+    AddInterface( mSampleEdgeInterface.get() );
+    AddInterface( mStrict4BitStartInterface.get() );
 
     AddExportOption( 0, "Export as text/csv file" );
     AddExportExtension( 0, "text", "txt" );
@@ -139,6 +151,8 @@ bool SDIOAnalyzerSettings::SetSettingsFromInterfaces()
     mDAT1Channel = mDAT1ChannelInterface->GetChannel();
     mDAT2Channel = mDAT2ChannelInterface->GetChannel();
     mDAT3Channel = mDAT3ChannelInterface->GetChannel();
+    mSampleOnRisingEdge = mSampleEdgeInterface->GetValue();
+    mStrict4BitStart = mStrict4BitStartInterface->GetValue();
 
     ClearChannels();
     // AddChannel( mInputChannel, "SDIO", true );
@@ -162,6 +176,8 @@ void SDIOAnalyzerSettings::UpdateInterfacesFromSettings()
     mDAT1ChannelInterface->SetChannel( mDAT1Channel );
     mDAT2ChannelInterface->SetChannel( mDAT2Channel );
     mDAT3ChannelInterface->SetChannel( mDAT3Channel );
+    mSampleEdgeInterface->SetValue( mSampleOnRisingEdge );
+    mStrict4BitStartInterface->SetValue( mStrict4BitStart );
 }
 
 void SDIOAnalyzerSettings::LoadSettings( const char* settings )
@@ -175,6 +191,8 @@ void SDIOAnalyzerSettings::LoadSettings( const char* settings )
     text_archive >> mDAT1Channel;
     text_archive >> mDAT2Channel;
     text_archive >> mDAT3Channel;
+    text_archive >> mSampleOnRisingEdge;
+    text_archive >> mStrict4BitStart;
 
     ClearChannels();
 
@@ -198,6 +216,8 @@ const char* SDIOAnalyzerSettings::SaveSettings()
     text_archive << mDAT1Channel;
     text_archive << mDAT2Channel;
     text_archive << mDAT3Channel;
+    text_archive << mSampleOnRisingEdge;
+    text_archive << mStrict4BitStart;
     // text_archive << mInputChannel;
     // text_archive << mBitRate;
 

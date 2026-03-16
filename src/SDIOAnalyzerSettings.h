@@ -45,6 +45,8 @@ class SDIOAnalyzerSettings : public AnalyzerSettings
     Channel mDAT3Channel;
     Channel mInputChannel;
     Channel mBitRate;
+    bool mSampleOnRisingEdge;
+    bool mStrict4BitStart;
 
   protected:
     std::unique_ptr<AnalyzerSettingInterfaceChannel> mClockChannelInterface;
@@ -53,4 +55,6 @@ class SDIOAnalyzerSettings : public AnalyzerSettings
     std::unique_ptr<AnalyzerSettingInterfaceChannel> mDAT1ChannelInterface;
     std::unique_ptr<AnalyzerSettingInterfaceChannel> mDAT2ChannelInterface;
     std::unique_ptr<AnalyzerSettingInterfaceChannel> mDAT3ChannelInterface;
+    std::unique_ptr<AnalyzerSettingInterfaceBool> mSampleEdgeInterface;
+    std::unique_ptr<AnalyzerSettingInterfaceBool> mStrict4BitStartInterface;
 };

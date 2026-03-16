@@ -22,6 +22,8 @@ ninja -C build install
    - `Clock` and `Command` are required.
    - `DAT0` enables 1-bit data decoding.
    - `DAT1..DAT3` must be all set (with `DAT0`) to enable 4-bit data decoding.
+   - `Sample On Rising Edge` selects which clock edge is used for CMD/DAT sampling.
+   - `Strict 4-bit DAT Start` requires all DAT lines to go low together to start a 4-bit data phase. Disable it if line skew makes start detection too brittle.
 3. Set the display base to Hex if you want hex bytes in bubbles and the data table.
 
 ### Data Table
